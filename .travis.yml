@@ -1,0 +1,9 @@
+language: c++
+sudo: false
+os: linux
+
+compiler:
+  - g++
+
+script:
+  - make hgt2png
