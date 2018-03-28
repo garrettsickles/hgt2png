@@ -31,10 +31,22 @@ E.G.
 ```
 
 ## Example
+
+### Single Image
 ```
 ./hgt2png N36W113.hgt 3601 3601
 ```
 ![Western Grand Canyon](test/N36W113.png)
+
+### Subdivided Images (n x n)
+```
+./hgt2png N36W113.hgt 3601 3601 3 3
+```
+
+![](test/N36W113.0.0.png) | ![](test/N36W113.0.1200.png) | ![](test/N36W113.0.2400.png)
+:----:|:----:|:----:
+![](test/N36W113.1200.0.png) | ![](test/N36W113.1200.1200.png) | ![](test/N36W113.1200.2400.png)
+![](test/N36W113.2400.0.png) | ![](test/N36W113.2400.1200.png) | ![](test/N36W113.2400.2400.png)
 
 ## Building
 ```
