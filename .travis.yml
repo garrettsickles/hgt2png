@@ -5,6 +5,7 @@ os: linux
 addons:
   apt:
     packages:
+    - unzip
     - libpng-dev
     - zlib1g-dev
 
@@ -12,4 +13,8 @@ compiler:
   - g++
 
 script:
+  - unzip test/N36W113.zip
   - make hgt2png
+  - ./hgt2png N36W113.hgt 3601 3601
+  - ./hgt2png N36W113.hgt 3601 3601 1 1
+  - ./hgt2png N36W113.hgt 3601 3601 5 5
