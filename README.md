@@ -4,6 +4,11 @@
 
 Convert HGT raster to a subset PNG rasters
 
+## Building
+```
+$ make clean
+$ make
+```
 ## Usage
 
 ```
