@@ -2,6 +2,12 @@ language: c++
 sudo: false
 os: linux
 
+addons:
+  apt:
+    packages:
+    - libpng-dev
+    - zlib1g-dev
+
 compiler:
   - g++
 
