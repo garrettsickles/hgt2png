@@ -69,14 +69,38 @@ int main(int argc, char** argv)
     /*
      * Arguement Parsing
      */
-    if (argc < 5)
+    if (argc < 4 || argc == 5)
     {
-        std::printf("Usage: \n");
+        std::printf(
+            "Usage: \n"
+            "        hgt2png <HGT Source> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]\n"
+            "Note:\n"
+            "        The last two parameters, [<Subwidth> <Subheight>], are optional.\n"
+            "            - If excluded, both default to 1.\n"
+            "            - If included, both must be counting number which evenly subdivide\n"
+            "                  <HGT Width> and <HGT Height>, respectively.\n"
+            "\n"
+            "E.G.\n"
+            "        hgt2png SOURCE.hgt temp/ 3601 3601 2 2\n"
+            "\n"
+            "            => temp/SOURCE.0.0.png\n"
+            "            => temp/SOURCE.0.1800.png\n"
+            "            => temp/SOURCE.1800.0.png\n"
+            "            => temp/SOURCE.1800.1800.png\n"
+            "\n"
+            "E.G.\n"
+            "        hgt2png SOURCE.hgt MyData. 3601 3601\n"
+            "\n"
+            "            => MyData.SOURCE.0.0.png\n"
+            "\n"
+        );
         return 0;
     }
 
     const auto width = std::atoi(argv[2]);
     const auto height = std::atoi(argv[3]);
+    const auto rows = argc >= 5 ? std::atoi(argv[4]) : 1;
+    const auto cols = argc >= 5 ? std::atoi(argv[5]) : 1;
     const auto pixel_count = static_cast<std::size_t>(width * height);
 
     /*
@@ -102,7 +126,28 @@ int main(int argc, char** argv)
         "File: \"%s\" (%" PRId64 " bytes)\nSize: %d(w) x %d(h) pixels (%lu samples)\n",
         argv[1], hgt_size, width, height, pixel_count
     );
-    
+
+    /*
+     * Verify the subdivisions
+     */
+    if (cols < 1 || rows < 1)
+    {
+        std::printf("Both row and column must be greater than or equal to 1, Exiting...\n");
+        return 1;
+    }
+    if (cols > 1 && (width - 1) % cols)
+    {
+        std::printf("One less than the width of %d is not evenly divisible by %d, Exiting...\n", width, cols);
+        return 1;
+    }
+    if (rows > 1 && (height - 1) % rows)
+    {
+        std::printf("One less than the height of %d is not evenly divisible by %d, Exiting...\n", height, rows);
+        return 1;
+    }
+    const auto subwidth = (width / cols) + (cols > 1 ? 1 : 0);
+    const auto subheight = (height / rows) + (rows > 1 ? 1 : 0);
+
     /*
      * Verify the size of the HGT raster
      */
@@ -121,7 +166,9 @@ int main(int argc, char** argv)
     char* last_slash = std::strrchr(argv[1], DIRECTORY_DELIM);
     char* file_name  = last_slash ? last_slash + 1 : argv[1];
     std::sscanf(file_name, "%c%2d%c%3d.hgt", &hemi[0], &ll[0], &hemi[1], &ll[1]);
-
+    std::string base_name = file_name;
+    base_name.erase(base_name.find_last_of("."), std::string::npos);
+    
     /*
      * Verify the filename raster coordinates
      */
@@ -220,92 +267,116 @@ int main(int argc, char** argv)
     }
 
     /*
+     * Calculate the physical dimensions of each subraster in radians
+     */
+    const double upx = deg_to_rad(1.0 / static_cast<double>(subwidth - 1));
+    const double upy = deg_to_rad(1.0 / static_cast<double>(subheight - 1));
+
+    /*
      * Write the PNG to a data buffer
      */
     std::vector<std::uint8_t> png_data;
+    std::vector<std::uint8_t*> png_rows(subheight);
+    size_t total_png_size = 0;
 
-    /*
-     * Setup the PNG info
-     */
-    png_structp png  = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    png_infop   info = png_create_info_struct(png);
-    png_set_IHDR(png, info,
-        static_cast<png_uint_32>(width),
-        static_cast<png_uint_32>(height),
-        sizeof(std::uint16_t) * 8,
-        PNG_COLOR_TYPE_GRAY,
-        PNG_INTERLACE_NONE,
-        PNG_COMPRESSION_TYPE_DEFAULT,
-        PNG_FILTER_TYPE_DEFAULT
-    );
-
-    /*
-     * Set the 'sCAL' (Physical Scale)
-     * 
-     * The dimensions of each pixel in radians
-     */
-    const double upx = deg_to_rad(1.0 / static_cast<double>(width - 1));
-    const double upy = deg_to_rad(1.0 / static_cast<double>(height - 1));
-    png_set_sCAL(png, info, 2, upx, upy);
-
-    /*
-     * Set the 'pCAL' (Pixel Calibration)
-     * 
-     * The 1st order function mapping the encoded PNG values to the physical values
-     */
-    auto decription = std::string("SRTM-HGT");
-    auto units = std::string("m");
-    auto p0 = std::to_string(minf);
-    auto p1 = std::to_string(deltaf);
-    png_charp params[2] = { &p0.at(0), &p1.at(0)};
-    png_set_pCAL(png, info, &decription.at(0), -32767, 32767, 0, 2, &units.at(0), params);
-
-    /*
-     * Setup a vector of pointers to the beginning of each row
-     */
-    std::vector<std::uint8_t*> rows(height);
-    for (auto r = 0; r < height; r++)
-        rows[r] = raster.data() + r * width * sizeof(std::uint16_t);
-
-    /*
-     * Write the PNG to a buffer
-     */
-    png_set_rows(png, info, rows.data());
-    png_set_write_fn(png, &(png_data), libpng_write_stdvector, NULL);
-    png_write_png(png, info, PNG_TRANSFORM_IDENTITY, NULL);
-    png_destroy_write_struct(&png, &info);
-    rows.clear();
-    raster.clear();
-    const auto png_size = png_data.size();
-
-    /*
-     * Write the PNG buffer out to file
-     */
-    CFile png_file = CFile(std::fopen(argv[4], "wb"), [](FILE* f)->void { std::fclose(f); });
-    if (!hgt_file.get())
+    int row_offset = 0;
+    int col_offset = 0;
+    for (auto row_index = 0; row_index < rows; row_index++)
     {
-        std::printf("Could not open file \"%s\", Exiting...\n", argv[4]);
-        return 1;
-    }
-    const auto write_size = std::fwrite(png_data.data(), png_data.size(), 1, png_file.get());
-    png_data.clear();
-    
-    /*
-     * Verify the file write
-     */
-    if (write_size != 1)
-    {
-        std::printf("Write size %" PRId64 ", Expected 1, Exiting...\n", write_size);
-        return 1;
+        for (auto col_index = 0; col_index < cols; col_index++)
+        {
+            /*
+             * Setup the PNG info
+             */
+            png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+            png_infop   info = png_create_info_struct(png);
+            png_set_IHDR(png, info,
+                static_cast<png_uint_32>(subwidth),
+                static_cast<png_uint_32>(subheight),
+                sizeof(std::uint16_t) * 8,
+                PNG_COLOR_TYPE_GRAY,
+                PNG_INTERLACE_NONE,
+                PNG_COMPRESSION_TYPE_DEFAULT,
+                PNG_FILTER_TYPE_DEFAULT
+            );
+
+            /*
+             * Set the 'sCAL' (Physical Scale)
+             * 
+             * The dimensions of each pixel in radians
+             */
+            png_set_sCAL(png, info, 2, upx, upy);
+
+            /*
+             * Set the 'pCAL' (Pixel Calibration)
+             * 
+             * The 1st order function mapping the encoded PNG values to the physical values
+             */
+            auto decription = std::string("SRTM-HGT");
+            auto units = std::string("m");
+            auto p0 = std::to_string(minf);
+            auto p1 = std::to_string(deltaf);
+            png_charp params[2] = { &p0.at(0), &p1.at(0)};
+            png_set_pCAL(png, info, &decription.at(0), -32767, 32767, 0, 2, &units.at(0), params);
+
+            /*
+             * Setup a vector of pointers to the beginning of each row
+             */
+            for (auto row_abs = row_offset; row_abs < (row_offset + subheight); row_abs++)
+            {
+                png_rows[row_abs - row_offset] =
+                    raster.data() +
+                    row_abs * width * sizeof(std::uint16_t) +
+                    (col_offset - 1) * sizeof(std::uint16_t);
+            }
+                
+
+            /*
+             * Write the PNG to a buffer
+             */
+            png_set_rows(png, info, png_rows.data());
+            png_set_write_fn(png, &(png_data), libpng_write_stdvector, NULL);
+            png_write_png(png, info, PNG_TRANSFORM_IDENTITY, NULL);
+            png_destroy_write_struct(&png, &info);
+            const auto png_size = png_data.size();
+
+            /*
+             * Write the PNG buffer out to file
+             */
+            std::string subname =
+                base_name + "." +
+                std::to_string(row_offset) + "." + std::to_string(col_offset) + ".png";
+            CFile png_file = CFile(std::fopen(subname.c_str(), "wb"), [](FILE* f)->void { std::fclose(f); });
+            if (!hgt_file.get())
+            {
+                std::printf("Could not open file \"%s\", Exiting...\n", subname.c_str());
+                return 1;
+            }
+            const auto write_size = std::fwrite(png_data.data(), png_data.size(), 1, png_file.get());
+            png_data.clear();
+            
+            /*
+             * Verify the file write
+             */
+            if (write_size != 1)
+            {
+                std::printf("Write size %" PRId64 ", Expected 1, Exiting...\n", write_size);
+                return 1;
+            }
+
+            total_png_size += png_size;
+            col_offset += (subheight - 1);      
+        }
+        col_offset = 0;
+        row_offset += (subwidth - 1);
     }
 
     /*
      * Show some statistics
      */
-    std::printf("Compression: %%%.2lf of original size\n",
-        static_cast<double>(png_size) / static_cast<double>(data_size) * 100.0
+    std::printf("Output: Compression: %.2lf%% of original size\n",
+        static_cast<double>(total_png_size) / static_cast<double>(data_size) * 100.0
     );
-    std::printf("Output: %s (%lu bytes)\n", argv[4], png_size);
     
     return 0;
 }
