@@ -1,6 +1,6 @@
 # hgt2png
 
-![Build Status](https://travis-ci.org/garrettsickles/hgt2png.svg?branch=master)
+[![Build Status](https://travis-ci.org/garrettsickles/hgt2png.svg?branch=master)](https://travis-ci.org/garrettsickles/hgt2png)
 
 Convert HGT raster to a subset PNG rasters
 
