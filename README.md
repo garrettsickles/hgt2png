@@ -4,13 +4,8 @@
 
 Convert HGT raster to a subset PNG rasters
 
-## Building
-```
-$ make clean
-$ make
-```
-## Usage
 
+## Usage
 ```
 Usage: 
         hgt2png <HGT Source> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]
@@ -40,3 +35,11 @@ E.G.
 ./hgt2png N36W113.hgt 3601 3601
 ```
 ![Western Grand Canyon](test/N36W113.png)
+
+## Building
+```
+$ make clean
+$ make
+```
+
+
