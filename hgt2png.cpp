@@ -5,18 +5,20 @@
  * 
  */
 #include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <libpng/png.h>
 
 /*
- * Cross platform 64-bit file position support
+ * Cross platform 64-bit file support
  */
 using CFile = std::unique_ptr<FILE, void(*)(FILE*)>;
 #if defined(_MSC_VER)
@@ -43,6 +45,13 @@ bool is_little_endian() {
 }
 
 /*
+ * Degrees To Radians
+ */
+double deg_to_rad(const double deg) {
+    return deg * 3.14159265358979323846 / 180;
+}
+
+/*
  * libpng 'write' function
  * 
  * Write a png to a std::vector of bytes
@@ -66,8 +75,9 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    const auto width  = std::atoi(argv[2]);
+    const auto width = std::atoi(argv[2]);
     const auto height = std::atoi(argv[3]);
+    const auto pixel_count = static_cast<std::size_t>(width * height);
 
     /*
      * Read in the HGT (.hgt) file
@@ -89,14 +99,13 @@ int main(int argc, char** argv)
     FSEEK64(hgt_file.get(), 0, SEEK_SET);
     std::printf
     (
-        "File: \"%s\"\nSize: %" PRId64 " bytes\nWidth: %d\nHeight: %d\n",
-        argv[1], hgt_size, width, height
+        "File: \"%s\" (%" PRId64 " bytes)\nSize: %d(w) x %d(h) pixels (%lu samples)\n",
+        argv[1], hgt_size, width, height, pixel_count
     );
     
     /*
      * Verify the size of the HGT raster
      */
-    const auto pixel_count = static_cast<std::size_t>(width * height);
     const auto data_size   = static_cast<decltype(hgt_size)>(pixel_count * sizeof(std::int16_t));
     if (hgt_size != data_size)
     {
@@ -122,13 +131,8 @@ int main(int argc, char** argv)
         std::printf("Inavlid hemisphere \"%c\" in \"%s\", Exiting...\n", valid_hemi[0] ? hemi[1] : hemi[0], file_name);
         return 1;
     }
-    std::printf
-    (
-        "%s: [%3d,%3d] degrees\n%s:  [%3d,%3d] degrees\n",
-        hemi[0] == 'N' ? "North" : "South",
-        ll[0], ll[0] + 1,
-        hemi[1] == 'E' ? "East" : "West",
-        ll[1], ll[1] + 1
+    std::printf("Bounds: (%d%c, %d%c) to (%d%c, %d%c)\n",
+        ll[0], hemi[0], ll[1], hemi[1], ll[0] + 1, hemi[0], ll[1] + 1, hemi[1]
     );
 
     /*
@@ -138,7 +142,7 @@ int main(int argc, char** argv)
     const auto read_size = std::fread(raster.data(), data_size, 1, hgt_file.get());
     if (read_size != 1)
     {
-        std::printf("Read size %" PRId64 ", Expected %" PRId64 ", Exiting...\n", read_size, data_size);
+        std::printf("Read size %" PRId64 ", Expected 1, Exiting...\n", read_size);
         return 1;
     }
     
@@ -181,7 +185,7 @@ int main(int argc, char** argv)
             maximum = temp;
         }
     }
-    std::printf("Min: %d\nMax: %d\nInvalid: %d\n", minimum, maximum, invalid);
+    std::printf("Range: [%d, %d] meters\nMissing: %d pixels\n", minimum, maximum, invalid);
 
     /*
      * Scale the raster to the range such that the minimum height
@@ -236,9 +240,25 @@ int main(int argc, char** argv)
     );
 
     /*
-     * Set the 'sCAL' to have the minimum and range
+     * Set the 'sCAL' (Physical Scale)
+     * 
+     * The dimensions of each pixel in radians
      */
-    png_set_sCAL(png, info, 1, minf, deltaf);
+    const double upx = deg_to_rad(1.0 / static_cast<double>(width - 1));
+    const double upy = deg_to_rad(1.0 / static_cast<double>(height - 1));
+    png_set_sCAL(png, info, 2, upx, upy);
+
+    /*
+     * Set the 'pCAL' (Pixel Calibration)
+     * 
+     * The 1st order function mapping the encoded PNG values to the physical values
+     */
+    auto decription = std::string("SRTM-HGT");
+    auto units = std::string("m");
+    auto p0 = std::to_string(minf);
+    auto p1 = std::to_string(deltaf);
+    png_charp params[2] = { &p0.at(0), &p1.at(0)};
+    png_set_pCAL(png, info, &decription.at(0), -32767, 32767, 0, 2, &units.at(0), params);
 
     /*
      * Setup a vector of pointers to the beginning of each row
@@ -254,12 +274,38 @@ int main(int argc, char** argv)
     png_set_write_fn(png, &(png_data), libpng_write_stdvector, NULL);
     png_write_png(png, info, PNG_TRANSFORM_IDENTITY, NULL);
     png_destroy_write_struct(&png, &info);
+    rows.clear();
+    raster.clear();
+    const auto png_size = png_data.size();
 
     /*
      * Write the PNG buffer out to file
      */
     CFile png_file = CFile(std::fopen(argv[4], "wb"), [](FILE* f)->void { std::fclose(f); });
-    std::fwrite(png_data.data(), png_data.size(), 1, png_file.get());
+    if (!hgt_file.get())
+    {
+        std::printf("Could not open file \"%s\", Exiting...\n", argv[4]);
+        return 1;
+    }
+    const auto write_size = std::fwrite(png_data.data(), png_data.size(), 1, png_file.get());
+    png_data.clear();
+    
+    /*
+     * Verify the file write
+     */
+    if (write_size != 1)
+    {
+        std::printf("Write size %" PRId64 ", Expected 1, Exiting...\n", write_size);
+        return 1;
+    }
 
+    /*
+     * Show some statistics
+     */
+    std::printf("Compression: %%%.2lf of original size\n",
+        static_cast<double>(png_size) / static_cast<double>(data_size) * 100.0
+    );
+    std::printf("Output: %s (%lu bytes)\n", argv[4], png_size);
+    
     return 0;
 }
