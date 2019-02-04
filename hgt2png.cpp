@@ -61,6 +61,29 @@ void libpng_write_stdvector(png_structp png_ptr, png_bytep data, png_size_t leng
     png->insert(png->end(), data, data + length);
 }
 
+#define HGT2PNG_USAGE_TEXT\
+    "Usage: \n"\
+    "        hgt2png <Mode> <HGT Source> <Output Prefix> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]\n"\
+    "Note:\n"\
+    "        The last two parameters, [<Subwidth> <Subheight>], are optional.\n"\
+    "            - If excluded, both default to 1.\n"\
+    "            - If included, both must be counting number which evenly subdivide\n"\
+    "                  <HGT Width> and <HGT Height>, respectively.\n"\
+    "\n"\
+    "E.G.\n"\
+    "        hgt2png a SOURCE.hgt temp/ 3601 3601 2 2\n"\
+    "\n"\
+    "            => temp/SOURCE.0.0.png\n"\
+    "            => temp/SOURCE.0.1800.png\n"\
+    "            => temp/SOURCE.1800.0.png\n"\
+    "            => temp/SOURCE.1800.1800.png\n"\
+    "\n"\
+    "E.G.\n"\
+    "        hgt2png r SOURCE.hgt MyData. 3601 3601\n"\
+    "\n"\
+    "            => MyData.SOURCE.0.0.png\n"\
+    "\n"
+    
 /*
  * Application entry point
  */
@@ -69,38 +92,17 @@ int main(int argc, char** argv)
     /*
      * Arguement Parsing
      */
-    if (argc < 4 || argc == 5)
+    if (argc < 6 || argc > 8 || argc == 7)
     {
-        std::printf(
-            "Usage: \n"
-            "        hgt2png <HGT Source> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]\n"
-            "Note:\n"
-            "        The last two parameters, [<Subwidth> <Subheight>], are optional.\n"
-            "            - If excluded, both default to 1.\n"
-            "            - If included, both must be counting number which evenly subdivide\n"
-            "                  <HGT Width> and <HGT Height>, respectively.\n"
-            "\n"
-            "E.G.\n"
-            "        hgt2png SOURCE.hgt temp/ 3601 3601 2 2\n"
-            "\n"
-            "            => temp/SOURCE.0.0.png\n"
-            "            => temp/SOURCE.0.1800.png\n"
-            "            => temp/SOURCE.1800.0.png\n"
-            "            => temp/SOURCE.1800.1800.png\n"
-            "\n"
-            "E.G.\n"
-            "        hgt2png SOURCE.hgt MyData. 3601 3601\n"
-            "\n"
-            "            => MyData.SOURCE.0.0.png\n"
-            "\n"
-        );
+        std::printf(HGT2PNG_USAGE_TEXT);
+        std::printf("%d\n", argc);
         return 0;
     }
 
-    const auto width = std::atoi(argv[2]);
-    const auto height = std::atoi(argv[3]);
-    const auto rows = argc >= 5 ? std::atoi(argv[4]) : 1;
-    const auto cols = argc >= 5 ? std::atoi(argv[5]) : 1;
+    const auto width = std::atoi(argv[4]);
+    const auto height = std::atoi(argv[5]);
+    const auto rows = argc == 8 ? std::atoi(argv[6]) : 1;
+    const auto cols = argc == 8 ? std::atoi(argv[7]) : 1;
     const auto pixel_count = static_cast<std::size_t>(width * height);
 
     /*
@@ -108,10 +110,11 @@ int main(int argc, char** argv)
      * 
      * Check that the file opened properly
      */
-    CFile hgt_file = CFile(std::fopen(argv[1], "rb"), [](FILE* f)->void { std::fclose(f); });
+    char* hgt_filename = argv[2];
+    CFile hgt_file = CFile(std::fopen(hgt_filename, "rb"), [](FILE* f)->void { std::fclose(f); });
     if (!hgt_file.get())
     {
-        std::printf("Could not open file \"%s\", Exiting...\n", argv[1]);
+        std::printf("Could not open file \"%s\", Exiting...\n", hgt_filename);
         return 1;
     }
 
@@ -124,7 +127,7 @@ int main(int argc, char** argv)
     std::printf
     (
         "File: \"%s\" (%" PRId64 " bytes)\nSize: %d(w) x %d(h) pixels (%lu samples)\n",
-        argv[1], hgt_size, width, height, pixel_count
+        hgt_filename, hgt_size, width, height, pixel_count
     );
 
     /*
@@ -163,10 +166,10 @@ int main(int argc, char** argv)
      */
     int  ll[2]       = { -1, -1 };
     char hemi[2]     = {  0,  0 };
-    char* last_slash = std::strrchr(argv[1], DIRECTORY_DELIM);
-    char* file_name  = last_slash ? last_slash + 1 : argv[1];
+    char* last_slash = std::strrchr(argv[2], DIRECTORY_DELIM);
+    char* file_name  = last_slash ? last_slash + 1 : hgt_filename;
     std::sscanf(file_name, "%c%2d%c%3d.hgt", &hemi[0], &ll[0], &hemi[1], &ll[1]);
-    std::string base_name = file_name;
+    std::string base_name = std::string(argv[3]) + file_name;
     base_name.erase(base_name.find_last_of("."), std::string::npos);
     
     /*
@@ -235,20 +238,44 @@ int main(int argc, char** argv)
     std::printf("Range: [%d, %d] meters\nMissing: %d pixels\n", minimum, maximum, invalid);
 
     /*
-     * Scale the raster to the range such that the minimum height
-     * encodes to 0 and the maximum height encodes to 65534
+     *
      */
     double toscale = 0.0;
     const double minf = static_cast<double>(minimum);
     const double deltaf = static_cast<double>(maximum) - minf;
-    svalue = nullptr;
-    std::uint16_t* uvalue = nullptr;
-    for (auto i = 0; i < data_size; i += sizeof(std::int16_t))
+
+    /*
+     * Absolute Mode
+     */
+    if (argv[1][0] == 'a')
     {
-        svalue = reinterpret_cast<std::int16_t*>(raster.data() + i);
-        uvalue = reinterpret_cast<std::uint16_t*>(raster.data() + i);
-        toscale = static_cast<double>(*svalue);
-        *uvalue = *svalue == -32768 ? 0xFFFF : static_cast<std::uint16_t>((toscale - minf) * 65534.0 / deltaf);
+        std::uint16_t* uvalue = nullptr;
+        for (auto i = 0; i < data_size; i += sizeof(std::int16_t))
+        {
+            svalue = reinterpret_cast<std::int16_t*>(raster.data() + i);
+            uvalue = reinterpret_cast<std::uint16_t*>(raster.data() + i);
+            *uvalue = *svalue == -32768 ? 0xFFFF : static_cast<std::uint16_t>(static_cast<double>(*svalue) + 32767.0);
+        }
+    }
+
+    /*
+     * Relative Mode, By default('r')
+     */
+    else
+    {
+        /*
+         * Scale the raster to the range such that the minimum height
+         * encodes to 0 and the maximum height encodes to 65534
+         */
+        svalue = nullptr;
+        std::uint16_t* uvalue = nullptr;
+        for (auto i = 0; i < data_size; i += sizeof(std::int16_t))
+        {
+            svalue = reinterpret_cast<std::int16_t*>(raster.data() + i);
+            uvalue = reinterpret_cast<std::uint16_t*>(raster.data() + i);
+            toscale = static_cast<double>(*svalue);
+            *uvalue = *svalue == -32768 ? 0xFFFF : static_cast<std::uint16_t>((toscale - minf) * 65534.0 / deltaf);
+        }
     }
 
     /*
