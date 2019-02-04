@@ -15,6 +15,6 @@ compiler:
 script:
   - unzip test/N36W113.zip
   - make hgt2png
-  - ./hgt2png N36W113.hgt 3601 3601
-  - ./hgt2png N36W113.hgt 3601 3601 1 1
-  - ./hgt2png N36W113.hgt 3601 3601 5 5
+  - ./hgt2png a N36W113.hgt Abs- 3601 3601
+  - ./hgt2png r N36W113.hgt Rel- 3601 3601 1 1
+  - ./hgt2png a N36W113.hgt Abs- 3601 3601 5 5
