@@ -16,7 +16,7 @@ Note:
                   <HGT Width> and <HGT Height>, respectively.
 
 E.G.
-        hgt2png SOURCE.hgt temp/ 3601 3601 2 2
+        hgt2png a SOURCE.hgt temp/ 3601 3601 2 2
 
             => temp/SOURCE.0.0.png
             => temp/SOURCE.0.1800.png
@@ -24,7 +24,7 @@ E.G.
             => temp/SOURCE.1800.1800.png
 
 E.G.
-        hgt2png SOURCE.hgt MyData. 3601 3601
+        hgt2png r SOURCE.hgt MyData. 3601 3601
 
             => MyData.SOURCE.0.0.png
 
@@ -34,13 +34,13 @@ E.G.
 
 ### Single Image
 ```
-./hgt2png N36W113.hgt 3601 3601
+./hgt2png r N36W113.hgt 3601 3601
 ```
 ![Western Grand Canyon](test/N36W113.png)
 
 ### Subdivided Images (n x n)
 ```
-./hgt2png N36W113.hgt 3601 3601 3 3
+./hgt2png r N36W113.hgt 3601 3601 3 3
 ```
 
 ![](test/N36W113.0.0.png) | ![](test/N36W113.0.1200.png) | ![](test/N36W113.0.2400.png)
