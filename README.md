@@ -8,7 +8,7 @@ Convert HGT raster to a subset PNG rasters
 ## Usage
 ```
 Usage: 
-        hgt2png <HGT Source> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]
+        hgt2png <Mode> <HGT Source> <Output Prefix> <HGT Width> <HGT Height> [<Subwidth> <Subheight>]
 Note:
         The last two parameters, [<Subwidth> <Subheight>], are optional.
             - If excluded, both default to 1.
